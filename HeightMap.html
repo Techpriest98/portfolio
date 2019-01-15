@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title> Height Map Tool </title>
+
+	<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.2.1/css/bootstrap.min.css" integrity="sha384-GJzZqFGwb1QTTN6wy59ffF1BuGJpLSa9DkKMp0DgiMDm4iYMj70gZWKYbI706tWS" crossorigin="anonymous">
+	<style type="text/css">
+		#viewport{
+			border: 1px solid #000;
+			background-color: #333;
+		}
+		.sidebar
+		{
+		}
+
+		.sidebar h2
+		{
+			color: #000;
+		}
+
+		.sidebar a
+		{
+			text-decoration: none;
+			background: #00d1ae;
+			color: #fff;
+			padding: 5px 10px 5px 10px;
+		}
+
+		.sidebar a:hover
+		{
+			text-decoration: none;
+			background: #fff;
+			color: #000;
+			padding: 5px 10px 5px 10px;
+			border: #000 1px solid;
+		}
+	</style>
+</head>
+<body>
+		<div class="container-fluid">
+			<div class="row">
+				<div class="col">
+					<div class="sidebar">
+						<h2>Height map generator</h2>
+						<p>By Andrii Yeromenko 2019</p>
+						<p>The dimond-square based height map generator</p>
+						<center>
+							<h3>Generation settings</h3>
+							<br>
+							<!-- Resolution slider -->
+							<div class="res-slider">
+								<div class="row">
+									<div class="col-4">
+										<p>Resolution</p>
+									</div>
+									<div class="col-4">
+										<input type="range" min="2" max="10" value="5" id="res-step">
+									</div>
+									<div class="col-4">
+										<div id="res-step-value">
+											<p>(32 x 32) px</p>
+										</div>
+									</div>
+								</div>
+							</div>
+							<br>
+							<!-- Roughness slider -->
+							<div class="roug-slider">
+								<div class="row">
+									<div class="col-4">
+										<p>Roughness</p>
+									</div>
+									<div class="col-4">
+										<input type="range" min="4" max="128" value="80" id="roug-step">
+									</div>
+									<div class="col-4">
+										<div id="roug-step-value">
+											<p>80 units</p>
+										</div>
+									</div>
+								</div>
+							</div>
+							<button type="button" class="btn btn-dark" id="gen-button">Generate</button>
+						</center>
+					</div>
+				</div>
+				<div class="col">
+					<h2>Preview</h2>
+					<canvas id="viewport" width="1024" height="1024">
+						<p>Your browser doesn't support the canvas</p>
+					</canvas>
+				</div>
+			</div>
+		</div>
+
+	<script type="text/javascript">
+		let viewport = document.getElementById("viewport");
+		let viewportCtx = viewport.getContext("2d");
+
+		let timeUpdate = 0; 
+		let deltaTime = 0;
+		let maxFPS = 60;
+
+		let x = 0;
+		let y = 0;
+		let velocity = 0.08;
+
+		let cells = {};
+		let width = 33;
+		let pixSize = 1024 / (width-1);
+		let roughness = 80;
+
+		let started = false;
+		let minHeight = 0;
+
+		let mapColors = {}
+
+		
+		function square(lx, ly, rx, ry)
+		{
+			let l = (rx - lx) / 2;
+
+			let a = cells[twoToOneDim(lx, ly, width)];
+			let b = cells[twoToOneDim(lx, ry, width)];
+			let c = cells[twoToOneDim(rx, ry, width)];
+			let d = cells[twoToOneDim(rx, ly, width)];
+
+			let cex = lx + l;
+			let cey = ly + l;
+
+			cells[twoToOneDim(cex, cey, width)] =  Math.floor((a + b + c + d) / 4 + randomRange(-l * 2 * roughness / width, l * 2 * roughness / width)); 
+			if(cells[twoToOneDim(cex, cey, width)] < minHeight) minHeight = cells[twoToOneDim(cex, cey, width)];
+		}
+
+		function diamond(tgx, tgy, l)
+		{
+			let a = 0, b = 0, c = 0, d = 0;
+
+			if (tgy - l >= 0)
+            	a = cells[twoToOneDim(tgx, tgy - l, width)];                       //      C--------
+        	else                                                  				   //      |        |
+            	a = cells[twoToOneDim(tgx, width -l, width)];                      // B---t g----D  |
+                                                                                   //      |        |
+                                                                                   //      A--------
+        	if (tgx - l >= 0)
+        		b = cells[twoToOneDim(tgx - l, tgy, width)];
+        	else
+        		b = cells[twoToOneDim(width - l, tgy, width)];
+
+
+        	if (tgy + l < width)
+        		c = cells[twoToOneDim(tgx, tgy + l, width)];
+        	else
+        		c = cells[twoToOneDim(tgx, l, width)];
+
+            if (tgx + l < width)
+            	d = cells[twoToOneDim(tgx + l, tgy, width)];
+            else
+            	d = cells[twoToOneDim(l, tgy, width)];
+             
+            cells[twoToOneDim(tgx, tgy, width)] =  Math.floor((a + b + c + d) / 4 + randomRange(-l * 2 * roughness / width, l * 2 * roughness / width));
+            if(cells[twoToOneDim(tgx, tgy, width)] < minHeight) minHeight = cells[twoToOneDim(tgx, tgy, width)];
+       	}
+
+       	function diamondSquare(lx, ly, rx, ry)
+    	{
+	        let l = (rx - lx) / 2;
+
+	        square(lx, ly, rx, ry);
+
+	        diamond(lx, ly + l, l);
+	        diamond(rx, ry - l, l);
+	        diamond(rx - l, ry, l);
+	        diamond(lx + l, ly, l);
+    	}
+
+
+
+    	function generate()
+    	{
+    		for (let x = 0; x < width; x += 1)
+            {
+                for (let y = 0; y < width; y += 1)
+                {
+                	cells[twoToOneDim(x, y, width)] = 0;
+                }
+            }
+
+    		console.log("Stage 1")
+	        cells[twoToOneDim(0, 0, width)] = randomRange(0, 1);
+	        cells[twoToOneDim(0, width -1, width)] = randomRange(0, 1);
+	        cells[twoToOneDim(width - 1, width - 1, width)] = randomRange(0, 1);
+	        cells[twoToOneDim(width - 1, 0, width)] = randomRange(0, 1);
+
+	        console.log("Stage 2")
+	        for (let l = (width - 1) / 2; l > 1; l = Math.floor(l / 2))
+	        {
+	            for (let x = 0; x < width - 1; x += l)
+	            {
+	                for (let y = 0; y < width - 1; y += l)
+	                {
+	                    diamondSquare(x, y, x + l, y + l);
+	                }
+
+	            }
+	    	}
+	    }
+
+		function randomRange(min, max)
+		{
+			let rand = min + Math.random() * (max + 1 - min);
+    		rand = Math.floor(rand);
+			return rand;
+		}
+
+		function twoToOneDim(x,y,length)
+		{
+			return x * length + y;
+		}
+
+		document.getElementById("gen-button").onclick = function()
+		{
+			generate();
+			for(let i = 0; i < width; i++)
+			{
+				for(let j = 0; j < width; j++)
+				{
+					let color = String((cells[twoToOneDim(i,j, width)] + Math.abs(minHeight)) * 2);
+					viewportCtx.fillStyle = "rgb(" +color+ ", " +color+ ", " +color+ ")";
+					viewportCtx.fillRect(i * pixSize, j * pixSize, pixSize, pixSize);
+				}
+			}
+		}
+
+		document.getElementById("res-step").oninput = function()
+		{
+			width = Math.pow(2,document.getElementById("res-step").value) + 1;
+			pixSize = 1024 / (width -1);
+			document.getElementById("res-step-value").innerHTML = "<p>("+ (width-1)+" x "+(width-1)+") px</p>";
+		}
+
+		document.getElementById("roug-step").oninput = function()
+		{
+			roughness = document.getElementById("roug-step").value;
+			document.getElementById("roug-step-value").innerHTML = "<p>"+roughness+" units</p>";
+		}
+	</script>
+
+	<script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.6/umd/popper.min.js" integrity="sha384-wHAiFfRlMFy6i5SRaxvfOCifBUQy1xHdJ/yoi7FRNXMRBu5WHdZYu1hA6ZOblgut" crossorigin="anonymous"></script>
+	<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.2.1/js/bootstrap.min.js" integrity="sha384-B0UglyR+jN6CkvvICOB2joaf5I4l3gm9GU6Hc1og6Ls7i6U/mkkaduKaBhlAXv9k" crossorigin="anonymous"></script>
+</body>
+</html>
